@@ -1,0 +1,5 @@
+Function: functionD, Stack Allocation: 16000 bytes
+Function: functionC, Stack Allocation: 2400 bytes
+Function: functionB, Stack Allocation: 24000 bytes
+Function: functionA, Stack Allocation: 24000 bytes
+Function: main, Stack Allocation: 32000 bytes

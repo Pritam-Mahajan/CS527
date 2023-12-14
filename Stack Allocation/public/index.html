@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stack Allocation Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        label {
+            margin-top: 10px;
+            margin-bottom: 5px;
+            display: block;
+            font-size: 16px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            height: 400px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 6px 10px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        h2 {
+            color: #333;
+        }
+
+        #result {
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            max-width: 800px;
+            overflow-wrap: break-word;
+        }
+
+        canvas {
+            margin-top: 20px;
+        }
+
+        #chart-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 800px;
+            width: 80%;
+            max-width: 1200px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Stack Allocation Overview</h1>
+    <label for="code">Enter C code:</label>
+    <textarea id="code" rows="20" cols="50"></textarea>
+    <button onclick="runCode()">Run Code</button>
+    <button onclick="requestFile()">Read File</button>
+    <h2>Stack Allocation Results:</h2>
+    <div id="result"></div>
+
+    <div id="chart-container">
+        <canvas id="memoryChart" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:3000');
+
+        const chartData = [];
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.code) {
+                    document.getElementById("result").innerText = data.fileContent;
+                    Chart.controllers = {};
+                    parseAndDisplayStack(data.fileContent);
+                    updateChart(chartData);
+                } else if (data.message) {
+                    document.getElementById("result").innerText = data.error;
+                }
+            } catch (error) {
+                handleNonJsonResponse(event.data);
+            }
+        };
+
+        function requestFile() {
+            socket.send(JSON.stringify({ action: 'readFile' }));
+        }
+
+        function parseAndDisplayStack(fileContent) {
+            chartData.length = 0;
+
+            const lines = fileContent.split('\n');
+            let currentMemoryPosition = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (line.startsWith('Function:')) {
+                    const match = line.match(/Function: (\w+), Stack Allocation: (\d+) bytes/);
+                    if (match) {
+                        const functionName = match[1];
+                        const stackSize = parseInt(match[2]);
+                        const startPosition = getRandomStartPosition(currentMemoryPosition);
+                        const endPosition = startPosition + stackSize;
+
+                        chartData.push({ functionName, stackSize, startPosition, endPosition });
+                        currentMemoryPosition = endPosition;
+                    }
+                }
+            }
+        }
+
+        function updateChart(stackInformation) {
+            const ctx = document.getElementById('memoryChart').getContext('2d');
+            const totalMemory = 8 * 1024 * 1024 * 1024;
+
+            const labels = [];
+            const datasets = [{
+                label: 'Memory',
+                data: [],
+                backgroundColor: [],
+            }];
+
+            stackInformation.forEach((entry) => {
+                const startAddressHex = '0x' + entry.startPosition.toString(16).toUpperCase().padStart(8, '0');
+                labels.push(`${entry.functionName}\nStart: ${startAddressHex}`);
+                datasets[0].data.push(entry.stackSize);
+                datasets[0].backgroundColor.push(getRandomColor());
+            });
+
+            const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: datasets,
+                },
+                options: {
+                    scales: {
+                        x: {
+                            stacked: true,
+                        },
+                        y: {
+                            stacked: true,
+                        },
+                    },
+                },
+            });
+        }
+
+        function runCode() {
+            const code = document.getElementById("code").value;
+            socket.send(JSON.stringify({ code }));
+        }
+
+        function handleNonJsonResponse(data) {
+            console.log(data);
+        }
+
+        function getRandomStartPosition(currentMemoryPosition) {
+            const minGap = 100;
+            const maxGap = 500;
+            return currentMemoryPosition + minGap + Math.floor(Math.random() * (maxGap - minGap + 1));
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+    </script>
+</body>
+</html>

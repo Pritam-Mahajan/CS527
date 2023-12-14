@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stack Allocation Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        label {
+            margin-top: 10px;
+            margin-bottom: 5px;
+            display: block;
+            font-size: 16px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 6px 10px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        h2 {
+            color: #333;
+        }
+
+        #result {
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            max-width: 600px;
+            overflow-wrap: break-word;
+        }
+
+        canvas {
+            margin-top: 20px;
+        }
+
+        #chart-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 600px; /* Set a fixed height for the container */
+        }
+
+        #code {
+            height: 200px; /* Set a fixed height for the code input box */
+            resize: none; /* Disable resizing */
+        }
+    </style>
+</head>
+<body>
+    <h1>Stack Allocation Overview</h1>
+    <label for="code">Enter C code:</label>
+    <textarea id="code" rows="10" cols="50"></textarea>
+    <button onclick="runCode()">Run Code</button>
+    <button onclick="readServerFile()">Read File</button>
+    <h2>Stack Allocation Results:</h2>
+    <div id="result"></div>
+
+    <div id="chart-container">
+        <canvas id="memoryChart" width="800" height="400"></canvas>
+    </div>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:3000');
+
+        const chartData = [];
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.code) {
+                    document.getElementById("result").innerText = '';
+                    Chart.controllers = {};
+                    updateChart(chartData);
+                } else if (data.message) {
+                    document.getElementById("result").innerText = data.message;
+                }
+            } catch (error) {
+                handleNonJsonResponse(event.data);
+            }
+        };
+
+        function readServerFile() {
+          const fileInput = document.createElement('input');
+          fileInput.type = 'file';
+
+          fileInput.addEventListener('change', async (event) => {
+              const file = event.target.files[0];
+
+              if (file) {
+                  const fileContent = await readFileContent(file);
+                  chartData.length = 0; // Clear existing data
+                  parseAndDisplayStack(fileContent);
+                  updateChart(chartData);
+                  socket.send(JSON.stringify({ code: true }));
+              }
+          });
+
+          fileInput.click();
+      }
+
+      async function readFileContent(file) {
+          return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+
+              reader.onload = (event) => {
+                  resolve(event.target.result);
+              };
+
+              reader.onerror = (error) => {
+                  reject(error);
+              };
+
+              reader.readAsText(file);
+          });
+      }
+
+        function parseAndDisplayStack(fileContent) {
+
+            const lines = fileContent.split('\n');
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i].trim();
+                if (line.startsWith('Function:')) {
+                    const match = line.match(/Function: (\w+), Stack Allocation: (\d+) bytes/);
+                    if (match) {
+                        const functionName = match[1];
+                        const stackSize = parseInt(match[2]);
+                        chartData.push({ functionName, stackSize });
+                    }
+                }
+            }
+        }
+
+        function updateChart(stackInformation) {
+            const ctx = document.getElementById('memoryChart').getContext('2d');
+            const totalMemory = 8 * 1024 * 1024 * 1024; // 8GB in bytes
+
+            const labels = stackInformation.map(entry => entry.functionName);
+            const data = stackInformation.map(entry => entry.stackSize);
+            const colors = stackInformation.map(entry => getRandomColor());
+
+            const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Stack Size',
+                        data: data,
+                        backgroundColor: colors,
+                        borderColor: colors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: totalMemory,
+                            ticks: {
+                                stepSize: 1024 * 1024 * 1024,
+                                callback: value => `${value / (1024 * 1024 * 1024)}GB`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        async function runCode() {
+            const code = document.getElementById("code").value;
+            socket.send(JSON.stringify({ code }));
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function handleNonJsonResponse(data) {
+                 // Handle non-JSON responses here (if any)
+                 console.log(data);
+             }
+
+        // Function to generate random colors
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+    </script>
+</body>
+</html>

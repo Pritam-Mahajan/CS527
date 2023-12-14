@@ -1,0 +1,5 @@
+Function: Z6printfPKcz, Stack Allocation: 56 bytes
+Function: Z9functionDii, Stack Allocation: 16 bytes
+Function: Z9functionCii, Stack Allocation: 48 bytes
+Function: Z9functionBii, Stack Allocation: 48 bytes
+Function: Z9functionAiii, Stack Allocation: 96 bytes
